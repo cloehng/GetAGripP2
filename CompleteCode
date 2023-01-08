@@ -1,0 +1,153 @@
+ip_address = 'localhost' # Enter your IP Address here
+project_identifier = 'P2B' # Enter the project identifier i.e. P2A or P2B
+#--------------------------------------------------------------------------------
+import sys
+import random
+sys.path.append('../')
+from Common.simulation_project_library import *
+
+hardware = False
+QLabs = configure_environment(project_identifier, ip_address, hardware).QLabs
+arm = qarm(project_identifier,ip_address,QLabs,hardware)
+potentiometer = potentiometer_interface()
+#--------------------------------------------------------------------------------
+# STUDENT CODE BEGINS
+# yousafza, Amna Yousafzai, Team 16
+#---------------------------------------------------------------------------------
+
+global chosen_ID
+global colors
+global autoclave_color
+
+chosen_ID= [] # initializes a list that will store the chosen containers
+colors= ['red', 'green', 'blue', 'red', 'green', 'blue']
+
+#function for randomly choosing a container ID
+#Chloe
+def choose_container(): 
+    container_ID = random.randint(1,6) #generate a random number between 1 and 6
+    
+    while container_ID in chosen_ID: #checks if the number generated already exists in the list that tracks the ID's of containers that have already spawned
+        container_ID = random.randint(1,6) #if the number is already in the list, it keeps generating a number until it is not in the list of chosen containers
+    chosen_ID.append(container_ID) #adds the generated number to the list
+    return container_ID
+
+#function for moving the q-arm using the right potentiometer values
+#Amna 
+def move_effector():
+        initial_reading= potentiometer.right()
+        autoclave_color= colors[container_ID-1]
+        while(potentiometer.right()<1 and arm.check_autoclave(autoclave_color)==False): #checks for value of right potentiometer and checks the color to determine whether or not the arm is at the correct autoclave
+            final_reading= potentiometer.right()
+            potentiometer_diff= final_reading - initial_reading  #takes difference of initial reading and final reading (current value of potentiometer) for rotating arm base
+            degrees= potentiometer_diff * 357 #incremental adjustment of right potentiometer is proportional to a corresponding incremental rotation of 375, calculated by dividing the amount the arm can rotate (175) by the amount the potentiometer can be adjusted 
+            arm.rotate_base(degrees)
+            initial_reading= final_reading
+            
+#function for picking up the spawned container
+#Amna
+def pick_up():
+        arm.rotate_wrist(10)
+        time.sleep(2)
+        arm.move_arm(0.573, 0.05, 0.024)#moves effector to the location where the container is spawned
+        time.sleep(2)
+        control_gripper()
+        time.sleep(2)
+        arm.move_arm(0.406, 0.0, 0.483) #arm goes back to the Home position
+        
+#function for transferring container to correct autoclave location from the Home position and returning home
+#Chloe 
+def drop_off(ID):
+        while (potentiometer.left() <= 1): #continuously checks the left potentiometer values
+            #movement of arm is based on the user adjusting the left potentiometer on of two thresholds
+            if (potentiometer.left() > 0.5 and potentiometer.left() < 1.0): # threshold 1 corresponds to position 1, on top of autoclave for small containers
+                    if container_ID == 1: #small red
+                            arm.move_arm(0.0, 0.621, 0.294)
+                            time.sleep(2)
+                            control_gripper()
+                            break
+                    elif container_ID == 2: #small green
+                            arm.move_arm(-0.632, 0.243, 0.32)
+                            time.sleep(2)
+                            control_gripper()
+                            break
+                    elif container_ID == 3: #small blue
+                            arm.move_arm(-0.011, -0.621, 0.294)
+                            time.sleep(2)
+                            control_gripper()
+                            break
+            elif (potentiometer.left()==1.0): #threshold 2 corresponds to position 2, inside drawers for large containers
+                    arm.activate_autoclaves()
+                    if container_ID == 4: #large red
+                            arm.open_autoclave("red")
+                            arm.move_arm(-0.0, 0.474, 0.258)
+                            time.sleep(1)
+                            control_gripper()
+                            time.sleep(2)
+                            arm.open_autoclave("red", False)
+                            break
+                    elif container_ID == 5: #large green
+                            arm.open_autoclave("green")
+                            arm.move_arm(-0.401, 0.146, 0.152)
+                            time.sleep(1)
+                            control_gripper()
+                            time.sleep(2)
+                            arm.open_autoclave("green", False)
+                            break
+                    elif container_ID == 6: #large blue
+                            arm.open_autoclave("blue")
+                            arm.move_arm(0.0, -0.399, 0.164)
+                            time.sleep(1)
+                            control_gripper()
+                            time.sleep(2)
+                            arm.open_autoclave("blue", False)
+                            break
+                    arm.deactivate_autoclaves()
+        time.sleep(2)
+        arm.home()
+        print("Please bring the right potentiometer back to 0.5.") #prompts the user to reset the right potentiometer to the inital value of 0.5
+        value= potentiometer.right()
+        while (value != 0.5 and len(chosen_ID)!= 6): #continuously checks if the right potentiometer has been set back to 0.5 and will stop checking once all the containers have been spawned
+            value= potentiometer.right()  
+        print("Right potentiometer reset to 0.5. ")
+        
+
+#function for controlling gripper (picking up and releasing)
+#Chloe and Amna
+def control_gripper():
+        #grip angle depending on container size
+        small_grip = 33 # angle for containers 1-3
+        large_grip = 30 # angle for containers 4-6
+        autoclave_color= colors[container_ID-1]
+        
+        if (arm.check_autoclave(autoclave_color)==False): #checks if the arm is at the desired autoclave and if it is not, then the gripper grips the container
+            if (container_ID==1 or container_ID==2 or container_ID==3): #for small containers
+                arm.control_gripper(small_grip)
+            else: #for large containers
+                arm.control_gripper(large_grip)
+            
+        else: #releases the container
+            if (choose_container==1 or choose_container==2 or choose_container==3): #for small containers
+                arm.control_gripper(small_grip*-1)
+            else: #for large containers
+                arm.control_gripper(large_grip*-1)
+    
+        
+#function for deciding whether to continue or terminate the program
+#Chloe
+def continue_terminate(): 
+    #iterates through the main functon 6 times as there are 6 containers and then the code terminates
+    for i in range(6):
+        main() 
+    exit()
+
+#Chloe and Amna
+def main():
+        global container_ID  
+        container_ID = choose_container()
+        arm.spawn_cage(container_ID) #container is spawned at the 'pick up' location
+        pick_up()
+        move_effector()
+        drop_off(container_ID)
+
+continue_terminate()
